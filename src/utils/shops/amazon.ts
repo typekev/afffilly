@@ -6,44 +6,95 @@ export async function applyAmazonCoupons(coupons: Coupon[]): Promise<Coupon | nu
     return null;
   }
 
-  const bestCoupon: Coupon | null = coupons[0];
-  try {
-    const couponInputField = document.querySelector('#spc-gcpromoinput') as HTMLInputElement;
-    if (!couponInputField) {
-      console.error('Could not find the coupon input field on Amazon.');
-      return null;
-    }
+  return new Promise((resolve, reject) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+      if (!tabs[0]?.id) {
+        reject('No active tab found.');
+        return;
+      }
 
-    couponInputField.value = bestCoupon.code;
+      chrome.scripting.executeScript(
+        {
+          target: { tabId: tabs[0].id },
+          func: async (coupons: Coupon[]) => {
+            const getGrandTotal = (): number | null => {
+              const table = document.querySelector('#subtotals-marketplace-table');
+              const totalCell = table?.querySelector('.grand-total-price') as HTMLElement | null;
+              if (totalCell) {
+                const priceText = totalCell.textContent?.replace(/[^0-9.]/g, '');
+                return priceText ? parseFloat(priceText) : null;
+              }
+              return null;
+            };
 
-    const applyButton = document.querySelector(
-      '#spc-gcpromoapply input[type=submit]',
-    ) as HTMLInputElement;
-    if (!applyButton) {
-      console.error('Could not find the Apply button.');
-      return null;
-    }
+            const applyCoupon = (couponCode: string): Promise<boolean> => {
+              return new Promise(resolve => {
+                const couponInputField = document.querySelector(
+                  '#spc-gcpromoinput',
+                ) as HTMLInputElement;
+                const applyButton = document.querySelector('#gcApplyButtonId') as HTMLInputElement;
 
-    applyButton.click();
+                if (!couponInputField || !applyButton) {
+                  resolve(false);
+                  return;
+                }
 
-    return new Promise(resolve => {
-      const observer = new MutationObserver(() => {
-        const successMessage = document.querySelector('.a-alert-success');
-        const errorMessage = document.querySelector('.a-alert-error');
+                couponInputField.value = couponCode;
+                applyButton.click();
 
-        if (successMessage) {
-          observer.disconnect();
-          resolve(bestCoupon);
-        } else if (errorMessage) {
-          observer.disconnect();
-          resolve(null);
-        }
-      });
+                const observer = new MutationObserver(() => {
+                  const successMessage = document.querySelector('#gc-promo-success') as HTMLElement;
+                  const errorMessage = document.querySelector('#gc-error') as HTMLElement;
 
-      observer.observe(document.body, { childList: true, subtree: true });
+                  if (
+                    successMessage &&
+                    window.getComputedStyle(successMessage).display === 'block'
+                  ) {
+                    observer.disconnect();
+                    resolve(true);
+                  } else if (
+                    errorMessage &&
+                    window.getComputedStyle(errorMessage).display === 'block'
+                  ) {
+                    observer.disconnect();
+                    resolve(false);
+                  }
+                });
+
+                observer.observe(document.body, { childList: true, subtree: true });
+              });
+            };
+
+            let bestCoupon: Coupon | null = null;
+            let bestTotal: number | null = null;
+
+            for (const coupon of coupons) {
+              if (await applyCoupon(coupon.code)) {
+                const total = getGrandTotal();
+                if (total !== null && (bestTotal === null || total < bestTotal)) {
+                  bestCoupon = coupon;
+                  bestTotal = total;
+                }
+              }
+            }
+
+            if (bestCoupon) {
+              await applyCoupon(bestCoupon.code);
+            }
+
+            return bestCoupon;
+          },
+          args: [coupons],
+        },
+        results => {
+          if (chrome.runtime.lastError) {
+            console.error('Script injection failed:', chrome.runtime.lastError.message);
+            resolve(null);
+          } else {
+            resolve(results?.[0]?.result ?? null);
+          }
+        },
+      );
     });
-  } catch (error) {
-    console.error('Error applying coupon:', error);
-    return null;
-  }
+  });
 }

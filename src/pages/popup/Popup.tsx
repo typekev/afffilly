@@ -84,7 +84,7 @@ export default function Popup() {
         ) : (
           <div className="text-center">
             <XCircle className="h-8 w-8 text-gray-400 mx-auto" />
-            <p className="mt-2 text-sm text-gray-600">No coupons applied yet</p>
+            <p className="mt-2 text-sm text-gray-600">No coupons applied.</p>
           </div>
         )}
       </CardContent>
