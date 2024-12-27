@@ -11,9 +11,6 @@
       "32": "icon-32.png"
     }
   },
-  "chrome_url_overrides": {
-    "newtab": "src/pages/newtab/index.html"
-  },
   "icons": {
     "16": "icon-16.png",
     "32": "icon-32.png",
